@@ -69,10 +69,6 @@ class Config():
         if self.verbose:
             print(*args, end=end)
 
-    # def msg_roles_control_info(self):
-    #     for i in range(self.msg_roles_num):
-    #         yield (self.msg_roles_control_typenames[i], self.msg_roles_control_localdepth[i])
-
     def next_msg_control_info(self):
         i = self.curr_msg_role_control_info_id
         info = (self.msg_roles_control_typenames[i], self.msg_roles_control_localdepth[i])
@@ -103,20 +99,6 @@ def insert_message_batch(message_batches: list, current_batch: list, config: Con
 
 
 def merge_lists(lists: list):
-    def list_equals(list1: list, list2: list, threshold = 5) -> bool:
-        if (list1 is None and list2 is not None) or (list1 is not None and list2 is None):
-            return False
-        if len(list1) != len(list2):
-            return False
-        
-        if threshold >= len(list1) * 3:
-            threshold = int(len(list1) / 3.0)
-        diff_count = 0
-        for i in range(len(list1)):
-            if list1[i] != list2[i]:
-                diff_count += 1
-        return diff_count <= threshold
-    
     result = []
     for l in lists:
         for elem in l:
@@ -230,7 +212,6 @@ def main(config: Config, chat_extractor: ChatExtractor, llm: LLM):
     chat_extractor.activate_message_list_panel(msg_list_control, wait=True)
     print("Please do not operate your computer, or the chat history browsing process would be interrupted...")
     while True:
-        # chat_extractor.activate_message_list_panel(msg_list_control, wait=False)
         # grab all the messages and corresponding senders and other roles (in current msg panel)
         curr_messages = chat_extractor.extract_chat_context(msg_list_control)
         if not insert_message_batch(message_batches, curr_messages, config, chat_extractor):
@@ -239,11 +220,6 @@ def main(config: Config, chat_extractor: ChatExtractor, llm: LLM):
         chat_extractor.scroll_message_list_panel(msg_list_control, "down" if config.scrolldown else "up", config.scrollsteps)
     print(f"Finished browsing your {config.window_title} ({config.window_classname}) window, now you can freely operate your computer.")
 
-    # messages = []
-    # for b in message_batches:
-    #     messages.append(('---', '---'))
-    #     messages += b
-    # # messages = set(messages)
     messages = merge_lists(message_batches)
 
     if config.verbose:
