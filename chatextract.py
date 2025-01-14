@@ -79,7 +79,7 @@ class QQChatExtractor(ChatExtractor):
     def try_form_message(self, control, local_depth) -> tuple[str, str]:
         if local_depth != self.msgbox_control_localdepth:
             return None
-        # 遇到了一条消息
+        # 这个 control 中包含一条消息
         sender = ""
         content = ""
         for c, d in uiauto.WalkControl(control):

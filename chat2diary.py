@@ -25,7 +25,8 @@ class Config():
             chatoutpath = "./chats-{Time}.txt",  # 将聊天记录保存到哪里；{Time} 标记将替换为当前时间戳
             diaryoutpath = "./diary-{Time}.txt",  # 将最后 AI 生成的日记文本保存到哪里；{Time} 标记将替换为当前时间戳
             appendoutput = False,  # 是否将聊天记录追加到 chatoutpath 文件中，而不是直接替换其中的文本
-            msgtruncate = -1,  # 设置为正值 (非 0) 能够将每条消息超过特定长度的部分不给 LLM 看；适用于某些“小作文”长度的消息在全局中意义不大的情况，减少 LLM 推理负担
+            chatbatchlen = 2500,  # 设置每次最多能够将多少字的聊天记录输入 LLM (同时也会保证输入的最后一条聊天记录是完整的)；如果聊天记录字数超过该 batch len，则会分多个批次将聊天记录依次输入 LLM，最终生成多段日记文本并拼合保存。设置为非正值则将全部聊天记录一次性导入 LLM。适用于避免聊天记录过长导致超出 LLM 上下文窗口限制。
+            msgtruncate = 200,  # 设置为正值 (非 0) 能够将每条消息超过特定长度的部分不给 LLM 看，设置为非正值则把每条消息的所有内容输入 LLM。适用于某些“小作文”长度的消息在全局中意义不大的情况，减少 LLM 推理负担
             apikey: str = None,  # your api key here 调用 AI 模型的 api key
             modelid: str = None,  # your model id here 调用的 AI 模型 ID
             sysprompts = {
@@ -52,6 +53,7 @@ class Config():
         self.chatoutpath = chatoutpath
         self.diaryoutpath = diaryoutpath
         self.appendoutput = appendoutput
+        self.chatbatchlen = chatbatchlen
         self.msgtruncate = msgtruncate
         self.apikey = apikey
         self.modelid = modelid
@@ -98,7 +100,11 @@ def insert_message_batch(message_batches: list, current_batch: list, config: Con
     return not finished_scrolling()
 
 
-def merge_lists(lists: list):
+def merge_lists(lists: list[list]):
+    if not isinstance(lists, list[list]):
+        print(f"Warning: messages extracted by {ChatExtractor.__name__}.{ChatExtractor.extract_chat_context.__name__}() are not lists, please make sure this matches your expectation. Now skipping merging them...")
+        return lists
+
     result = []
     for l in lists:
         for elem in l:
@@ -107,7 +113,9 @@ def merge_lists(lists: list):
     return result
 
 
-def chat_to_diary(message_str: str, outpath: str, llm: LLM, config: Config, max_len_per_message = 2500):
+def chat_to_diary(message_str: str, outpath: str, llm: LLM, config: Config):
+    max_len_per_message = config.chatbatchlen
+
     day_of_week = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
     curr_time = time.localtime()
     out_diary = f"日记 - {'{:02d}'.format(curr_time.tm_year)} 年 {'{:02d}'.format(curr_time.tm_mon)} 月 {'{:02d}'.format(curr_time.tm_mday)} 日 {day_of_week[curr_time.tm_wday]} ({'{:02d}'.format(curr_time.tm_hour)}:{'{:02d}'.format(curr_time.tm_min)})"
