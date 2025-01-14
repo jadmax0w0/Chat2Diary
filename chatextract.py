@@ -12,30 +12,36 @@ class ChatExtractor():
     def find_message_list_panel(self, parent: uiauto.Control) -> uiauto.Control:
         raise NotImplementedError()
     
-    def activate_message_list_panel(self, panel: uiauto.Control, wait = True):
+    def activate_message_list_panel(self, panel: uiauto.Control):
         print(f"Activating {panel.Name} ({panel.ControlTypeName}), please wait... ", end='')
-        panel.Click()
-        if wait:
-            time.sleep(1)
+        set_focus = panel.SetFocus()  # bring up target window
+        panel.Click()  # move mouse cursor to it
+        set_focus = panel.SetFocus()  # just in case
+        assert set_focus, f"Set focus on {panel.Name} ({panel.ControlTypeName}) failed."
         print(f"Activated.")
 
     def scroll_message_list_panel(self, panel: uiauto.Control, direction: str = "down", scroll_times: int = 20):
         direction = direction.lower()
         if direction == 'up':
-            direction = "{Up}"
+            uiauto.WheelUp(scroll_times)
         elif direction == 'down':
-            direction = "{Down}"
-        elif direction == 'left':
-            direction = "{Left}"
-        elif direction == 'right':
-            direction = "{Right}"
-        else:
-            direction = "{Down}"
+            uiauto.WheelDown(scroll_times)
+        # if direction == 'up':
+        #     direction = "{Up}"
+        # elif direction == 'down':
+        #     direction = "{Down}"
+        # elif direction == 'left':
+        #     direction = "{Left}"
+        # elif direction == 'right':
+        #     direction = "{Right}"
+        # else:
+        #     direction = "{Down}"
 
-        scroll_cmds = [direction for _ in range(scroll_times)]
-        scroll_cmds = "".join(scroll_cmds)
-        # self.activate_message_list_panel(panel, wait=False)
-        uiauto.SendKeys(scroll_cmds)
+        # scroll_cmds = [direction for _ in range(scroll_times)]
+        # scroll_cmds = "".join(scroll_cmds)
+        # # self.activate_message_list_panel(panel, wait=False)
+        # # uiauto.SendKeys(scroll_cmds)
+        # panel.SendKeys(scroll_cmds)
 
     def check_reached_day_start(self, msg) -> bool:
         raise NotImplementedError()

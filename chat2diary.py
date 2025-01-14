@@ -13,14 +13,13 @@ class Config():
     def init(
             self,
             fromfile = "",  # 直接读取之前程序提取出来并存储到文件中的聊天记录
-            get_window_mode = "focused",  # 目前仅支持这一种
-            window_classname = "Chrome_WidgetWin_1",
-            window_title = "QQ",
-            subwindow_classname = "Chrome_RenderWidgetHostHWND",
-            subwindow_title = "Chrome Legacy Window",
-            day_start_time_tag = "昨天",
-            scrolldown = False,  # 向上滚动：程序自动将消息框从当前位置向上滚动到 day_start_time_tag 出现处的聊天消息；向下滚动：首先需要手动滚动到当天开始处的聊天记录，随后程序自动向下滚动窗口直到结束
-            scrollsteps = 40,  # 每次程序滚动聊天窗口的距离
+            windowsearchmode = "traverse",  # focused: 程序启动时需要切换到目标程序的窗口; traverse: 程序启动时无需切换到目标程序的窗口
+            windowsearchdepth = 3,  # 当 windowsearchmode 为 traverse 时，规定最深搜索几层窗口
+            windowclassname = "Chrome_WidgetWin_1",
+            windowname = "QQ",
+            daystartlabel = "昨天",
+            scrolldown = False,  # 向上滚动：程序自动将消息框从当前位置向上滚动到 daystartlabel 出现处的聊天消息；向下滚动：首先需要手动滚动到当天开始处的聊天记录，随后程序自动向下滚动窗口直到结束
+            scrollsteps = 8,  # 每次程序滚动聊天窗口的距离
             singleshot = False,  # 只截取当前显示出来的一些聊天记录 (不滚动窗口)
             chatoutpath = "./chats-{Time}.txt",  # 将聊天记录保存到哪里；{Time} 标记将替换为当前时间戳
             diaryoutpath = "./diary-{Time}.txt",  # 将最后 AI 生成的日记文本保存到哪里；{Time} 标记将替换为当前时间戳
@@ -41,12 +40,11 @@ class Config():
             debug = False,  # 调试模式 (可以调试自己的一些东西)
     ):
         self.fromfile = fromfile
-        self.get_window_mode = get_window_mode
-        self.window_classname = window_classname
-        self.window_title = window_title
-        self.subwindow_classname = subwindow_classname
-        self.subwindow_title = subwindow_title
-        self.day_start_time_tag = day_start_time_tag
+        self.windowsearchmode = windowsearchmode
+        self.windowsearchdepth = windowsearchdepth
+        self.windowclassname = windowclassname
+        self.windowname = windowname
+        self.daystartlabel = daystartlabel
         self.scrolldown = scrolldown
         self.scrollsteps = scrollsteps
         self.singleshot = singleshot
@@ -83,13 +81,47 @@ class Config():
         return self.chatoutpath.replace("{Time}", time_str), self.diaryoutpath.replace("{Time}", time_str)
 
 
+def get_target_control(config: Config) -> uiauto.Control:
+    if config.windowsearchmode.lower() == "focused":
+        print(f"Please click on your {config.windowname} ({config.windowclassname}) window and leave your mouse and keyboard be.\nNow you have 3 sec. to do so\n3")
+        time.sleep(1)
+        print(2)
+        time.sleep(1)
+        print(1)
+        time.sleep(1)
+        print("Started.")
+
+        # get all parent controls from currently focused control, since currently focused control might be a child of target window
+        control = uiauto.GetFocusedControl()
+        while control:  # recursively get parent controls
+            if control.Name == config.windowname and control.ClassName == config.windowclassname:
+                print("Confirmed that currently window is target window.")
+                return control
+            control = control.GetParentControl()
+        print(f"Currently focused window is not a window of {config.windowname} ({config.windowclassname}).")
+    else:
+        print("Locating core window... ", end="")
+        control = uiauto.GetFocusedControl()
+        while control.GetParentControl():
+            control = control.GetParentControl()
+        print(f"Loaded: {control.Name} ({control.ControlTypeName})")
+        for i in range(config.windowsearchdepth):
+            print(f"Searching target window {config.windowname} ({config.windowclassname}) with max depth of {i+1}... ", end="")
+            for c, _ in uiauto.WalkControl(control, maxDepth=i+1):
+                if c.Name == config.windowname and c.ClassName == config.windowclassname:
+                    print("Found.")
+                    return c
+            print("Failed.")
+    return None
+
+
 def insert_message_batch(message_batches: list, current_batch: list, config: Config, chat_extractor: ChatExtractor) -> bool:
     def finished_scrolling() -> bool:
         if config.singleshot:
             return True
         if config.scrolldown and (len(message_batches) > 1 and message_batches[-1] == message_batches[-2]):
             return True
-        if not config.scrolldown and chat_extractor.check_reached_day_start(message_batches[0], config.day_start_time_tag):
+        if not config.scrolldown and chat_extractor.check_reached_day_start(message_batches[0], config.daystartlabel):
             return True
         return False
 
@@ -101,9 +133,12 @@ def insert_message_batch(message_batches: list, current_batch: list, config: Con
 
 
 def merge_lists(lists: list[list]):
-    if not isinstance(lists, list[list]):
-        print(f"Warning: messages extracted by {ChatExtractor.__name__}.{ChatExtractor.extract_chat_context.__name__}() are not lists, please make sure this matches your expectation. Now skipping merging them...")
-        return lists
+    if not lists or len(lists) <= 0:
+        return []
+    for l in lists:
+        if not isinstance(l, list):
+            print(f"Warning: messages extracted by {ChatExtractor.__name__}.{ChatExtractor.extract_chat_context.__name__}() are not lists, please make sure this matches your expectation. Now skipping merging them...")
+            return lists
 
     result = []
     for l in lists:
@@ -163,70 +198,40 @@ def main(config: Config, chat_extractor: ChatExtractor, llm: LLM):
         print(f"Diary saved to file {diary_outpath}")
         return
 
-    assert config.get_window_mode == "focused"
-
-    print(f"Please click on your {config.window_title} ({config.window_classname}) window and leave your mouse and keyboard be.\nNow you have 3 sec. to do so\n3")
-    time.sleep(1)
-    print(2)
-    time.sleep(1)
-    print(1)
-    time.sleep(1)
-    print("Starting.")
-
-    # get all controls from currently focused window
-    control = uiauto.GetFocusedControl()
-    assert control
-    controls_list: list[uiauto.Control] = []
-    while control:  # recursively get parent controls
-        controls_list.insert(0, control)
-        control = control.GetParentControl()
-    if len(controls_list) == 1:
-        control = controls_list[0]
-    else:
-        control = controls_list[1]
-
-    # find window (control) corresponding to config settings
-    target_controls: list[uiauto.Control] = []
-    for c in controls_list:
-        if c.ClassName == config.window_classname or c.Name == config.window_title:
-            target_controls.append(c)
-        elif c.ClassName == config.subwindow_classname or c.Name == config.subwindow_title:
-            target_controls.append(c)
-
+    # find target window
+    config.murmur(f"Window search mode: {config.windowsearchmode}")
+    target_control = get_target_control(config)
     if config.verbose and config.debug:
-        for c in target_controls:
-            uiauto.LogControl(c)
-            t = input(f"Show contens of {c.Name} ({c.ControlTypeName})? y/[n] ")
-            t = str(t).lower()
-            if t == 'y':
-                uiauto.EnumAndLogControl(c)
-            print()
+        uiauto.LogControl(target_control)
+        t = input(f"Show contens of {target_control.Name} ({target_control.ControlTypeName})? y/[n] ").lower()
+        if t == 'y':
+            uiauto.EnumAndLogControl(target_control)
+        print()
     
-    assert len(target_controls) > 0, f"Could not find window instance named {config.window_title} ({config.window_classname})"
+    assert target_control is not None, f"Could not find window instance named {config.windowname} ({config.windowclassname})"
 
     # find message list control
-    msg_list_control = None
-    for target in target_controls:
-        msg_list_control = chat_extractor.find_message_list_panel(target)
-        if msg_list_control is not None:
-            break
+    msg_list_control = chat_extractor.find_message_list_panel(target_control)
     
-    # simulate clicking on the message list panel, as to activate it and scroll it
+    # activate the message list panel and simulate scrolling it
     assert msg_list_control is not None, f"Could not locate a message list control named {chat_extractor.msg_list_control_name} ({chat_extractor.msg_list_control_typename}) in target window."
-    # if config.debug:
-    #     uiauto.EnumAndLogControl(msg_list_control)
-    #     return
+    if config.verbose and config.debug:
+        t = input(f"Show contens of {msg_list_control.Name} ({msg_list_control.ControlTypeName})? y/[n] ").lower()
+        if t == 'y':
+            uiauto.EnumAndLogControl(msg_list_control)
+        print()
     message_batches = []
-    chat_extractor.activate_message_list_panel(msg_list_control, wait=True)
+    chat_extractor.activate_message_list_panel(msg_list_control)
     print("Please do not operate your computer, or the chat history browsing process would be interrupted...")
     while True:
         # grab all the messages and corresponding senders and other roles (in current msg panel)
+        # chat_extractor.activate_message_list_panel(msg_list_control)
         curr_messages = chat_extractor.extract_chat_context(msg_list_control)
         if not insert_message_batch(message_batches, curr_messages, config, chat_extractor):
             break
         # scroll up to get earlier messages
         chat_extractor.scroll_message_list_panel(msg_list_control, "down" if config.scrolldown else "up", config.scrollsteps)
-    print(f"Finished browsing your {config.window_title} ({config.window_classname}) window, now you can freely operate your computer.")
+    print(f"Finished browsing your {config.windowname} ({config.windowclassname}) window, now you can freely operate your computer.")
 
     messages = merge_lists(message_batches)
 
@@ -236,6 +241,9 @@ def main(config: Config, chat_extractor: ChatExtractor, llm: LLM):
             print(msg)
 
     # save extracted chat history
+    if config.debug:
+        if input("Continue to save chat history? y/[n]").lower() != 'y':
+            return
     message_str = chat_extractor.chat_context_to_str(messages)
     chat_outpath = config.format_output_path()[0]
     if config.appendoutput:
@@ -248,6 +256,9 @@ def main(config: Config, chat_extractor: ChatExtractor, llm: LLM):
 
     # start prompting ai to generate a diary text
     if not config.noai:
+        if config.debug:
+            if input("Continue to call LLM? y/[n]").lower() != 'y':
+                return
         print("Calling LLM to get a diary...")
         message_str = chat_extractor.chat_context_to_str(messages, per_msg_truncate=config.msgtruncate)
         config.murmur("------------\nChat context sent to LLM: ")
