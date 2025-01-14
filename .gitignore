@@ -1,4 +1,5 @@
 *.txt
+!requirements.txt
 build
 __pycache__
 *.spec
